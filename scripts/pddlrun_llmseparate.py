@@ -659,7 +659,7 @@ class LLMHandler:
         logprobs: Optional[int] = 1,
         frequency_penalty: float = 0
     ) -> Tuple[dict, str]:
-        """the language model 
+        """Query the language model.
         
         Args:
             prompt: Either a string or a list of message dicts
@@ -678,7 +678,12 @@ class LLMHandler:
         
         for attempt in range(MAX_RETRIES):
             try:
-                if "gpt" not in gpt_version:
+                # Use Chat API if prompt is a list of messages (standard for this repo's prompts)
+                # or if it's a GPT model or common modern name.
+                use_chat = isinstance(prompt, list) or "gpt" in gpt_version.lower() or "llama" in gpt_version.lower()
+                
+                if not use_chat:
+                    print(f"Using Legacy Completions API for {gpt_version}")
                     response = openai.completions.create(
                         model=gpt_version, 
                         prompt=prompt, 
@@ -690,9 +695,12 @@ class LLMHandler:
                     )
                     return response, response.choices[0].text.strip()
                 else:
+                    # If prompt is a string but we want Chat API, wrap it
+                    messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
+                    
                     response = openai.chat.completions.create(
                         model=gpt_version, 
-                        messages=prompt, 
+                        messages=messages, 
                         max_tokens=max_tokens, 
                         temperature=temperature, 
                         frequency_penalty=frequency_penalty
@@ -700,6 +708,7 @@ class LLMHandler:
                     return response, response.choices[0].message.content.strip()
                     
             except openai.RateLimitError:
+                print(f"Rate limit hit, retrying in {retry_delay}s...")
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
@@ -707,12 +716,14 @@ class LLMHandler:
                 raise LLMError("Rate limit exceeded")
                 
             except (openai.APIError, openai.APITimeoutError) as e:
+                print(f"API Error ({gpt_version}): {str(e)}. Retrying...")
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(retry_delay)
                     continue
                 raise LLMError(f"API Error after all retries: {str(e)}")
                 
             except Exception as e:
+                print(f"Unexpected error during LLM query: {str(e)}")
                 raise LLMError(f"Unexpected error in LLM query: {str(e)}")
 
 class PDDLValidator:
@@ -1990,13 +2001,13 @@ def parse_arguments() -> argparse.Namespace:
         "--prompt-decompse-set",
         type=str,
         default="pddl_train_task_decomposesep",
-        choices=['pddl_train_task_decompose']
+        choices=['pddl_train_task_decompose', 'pddl_train_task_decomposesep', 'warehouse_task_decomposesep']
     )
     parser.add_argument(
         "--prompt-allocation-set",
         type=str,
         default="pddl_train_task_allocationsep",
-        choices=['pddl_train_task_allocation']
+        choices=['pddl_train_task_allocation', 'pddl_train_task_allocationsep', 'warehouse_task_allocationsep_problem']
     )
     parser.add_argument(
         "--test-set",
