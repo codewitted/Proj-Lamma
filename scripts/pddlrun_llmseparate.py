@@ -330,7 +330,7 @@ class FileProcessor:
 
 
 
-    '''
+    r'''
     def split_and_store_tasks(self, content: str, llm: Optional['LLMHandler'] = None, gpt_version: Optional[str] = None) -> Tuple[List[str], str]:
         """Split and store tasks from content.
         
@@ -1545,7 +1545,7 @@ class TaskManager:
 
 
     #PG: Edited the following function
-    '''
+    r'''
     def problemextracting(
         self,
         subtasks: List[str],
@@ -1817,7 +1817,7 @@ class TaskManager:
         print("the problem_pddl is")
         print(problem_pddl)
         return problem_pddl
-    '''
+    r'''
     
     
     
