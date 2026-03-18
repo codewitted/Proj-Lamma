@@ -648,7 +648,22 @@ class LLMHandler:
                 raise LLMError(f"Error reading API key file: {str(e)}")
         except Exception as e:
             raise LLMError(f"Error setting up API: {str(e)}")
-    
+
+    def _update_provider_config(self, gpt_version: str):
+        """Update openai config based on the model/provider."""
+        if self.base_url:
+            openai.base_url = self.base_url
+            return
+
+        version_lower = gpt_version.lower()
+        if "deepseek" in version_lower:
+            openai.base_url = "https://api.deepseek.com"
+        elif "gemini" in version_lower:
+            # Note: Gemini usually needs its own SDK, but some proxies support OpenAI format
+            pass
+        else:
+            openai.base_url = "https://api.openai.com/v1"
+
     def query_model(
         self, 
         prompt: Union[str, List[Dict]], 
@@ -678,6 +693,8 @@ class LLMHandler:
         
         for attempt in range(MAX_RETRIES):
             try:
+                self._update_provider_config(gpt_version)
+                
                 # Use Chat API if prompt is a list of messages (standard for this repo's prompts)
                 # or if it's a GPT model or common modern name.
                 use_chat = isinstance(prompt, list) or "gpt" in gpt_version.lower() or "llama" in gpt_version.lower()
@@ -725,6 +742,47 @@ class LLMHandler:
             except Exception as e:
                 print(f"Unexpected error during LLM query: {str(e)}")
                 raise LLMError(f"Unexpected error in LLM query: {str(e)}")
+
+class MockLLMHandler:
+    """Mock LLM handler for offline testing and demos."""
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    def query_model(self, prompt, gpt_version, **kwargs):
+        """Return a structured mock response for warehouse tasks."""
+        prompt_text = str(prompt)
+        
+        # 1. Mock Task Decomposition
+        if "decompose" in prompt_text.lower():
+            return {}, """
+Subtask 1: robot1 move to kit_aisle
+Subtask 2: robot1 reserve-aisle kit_aisle
+Subtask 3: robot1 pickup kit
+Subtask 4: robot1 release-aisle kit_aisle
+Subtask 5: robot1 move to station_aisle
+Subtask 6: robot1 reserve-aisle station_aisle
+Subtask 7: robot1 put kit station
+Subtask 8: robot1 release-aisle station_aisle
+""".strip()
+
+        # 2. Mock PDDL Allocation/Generation
+        if "pddl" in prompt_text.lower() or "define" in prompt_text.lower():
+            return {}, """
+(define (plan)
+  (:steps
+    (move robot1 origin kit_aisle)
+    (reserve-aisle robot1 kit_aisle)
+    (pickup robot1 kit kit_aisle)
+    (release-aisle robot1 kit_aisle)
+    (move robot1 kit_aisle station_aisle)
+    (reserve-aisle robot1 station_aisle)
+    (put robot1 kit station station_aisle)
+    (release-aisle robot1 station_aisle)
+  )
+)
+""".strip()
+
+        return {}, "Mock response for generic prompt"
 
 class PDDLValidator:
     """Handles PDDL validation operations"""
@@ -1111,6 +1169,7 @@ class TaskManager:
                 # Generate and store problem files
                 code_plan = self._generate_problem_files(problem_summary)
                 self.code_plan.append(code_plan) 
+                self.validated_plan.append(code_plan) # Ensure this is populated for logging
                 print("✓ Problem files generated")
                 # print("Code Plan:\n", code_plan)
                 # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -2016,6 +2075,7 @@ def parse_arguments() -> argparse.Namespace:
         choices=['final_test']
     )
     parser.add_argument("--log-results", type=bool, default=True)
+    parser.add_argument("--mock", action="store_true", help="Use Mock LLM for offline demonstration")
     
     args = parser.parse_args()
     
@@ -2040,6 +2100,10 @@ def main():
             prompt_decompse_set=args.prompt_decompse_set,
             prompt_allocation_set=args.prompt_allocation_set
         )
+
+        if args.mock:
+            print(">>> RUNNING IN MOCK SHOWCASE MODE <<<")
+            task_manager.llm = MockLLMHandler()
         
         if args.bddl_file:
             # Process single BDDL task

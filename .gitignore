@@ -1,0 +1,29 @@
+# API Keys and Sensitive Data
+api_key.txt
+api_key_deepseek.txt
+api_key_openai.txt
+*.key
+*.pem
+
+# Project Artifacts and Logs
+logs/
+data/final_test/FloorPlan6_gpt-4o-mini_warehouse_task_decomposesep_warehouse_task_allocationsep_problem/
+warehouse_locks.json
+
+# Python Environment and Cache
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# System Files
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
