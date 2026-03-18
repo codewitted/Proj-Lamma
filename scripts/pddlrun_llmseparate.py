@@ -606,36 +606,48 @@ class LLMHandler:
 
     """
     
-    def __init__(self, api_key_file: str):
+    def __init__(self, api_key_file: str, base_url: Optional[str] = None):
         """Initialize the LLM handler.
         
         Args:
             api_key_file (str): Path to the API key file
+            base_url (str, optional): Base URL for the API
         """
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self.setup_api(api_key_file)
     
     def setup_api(self, api_key_file: str) -> None:
-        """Set up the OpenAI API key."""
+        """Set up the OpenAI API key and base URL."""
         try:
+            # Set base URL if provided or in environment
+            if self.base_url:
+                openai.base_url = self.base_url
+                print(f"Using API base URL: {self.base_url}")
             
             try:
-                api_key = Path(api_key_file + '.txt').read_text().strip()
-                if not api_key:
-                    raise ValueError("API key file is empty")
-                openai.api_key = api_key
-                print("Successfully loaded API key from", api_key_file + '.txt')
-            except FileNotFoundError:
-                # Try without .txt extension
-                try:
-                    api_key = Path(api_key_file).read_text().strip()
+                # Try reading from file
+                api_key_path = Path(api_key_file if api_key_file.endswith('.txt') else api_key_file + '.txt')
+                if api_key_path.exists():
+                    api_key = api_key_path.read_text().strip()
                     if not api_key:
                         raise ValueError("API key file is empty")
                     openai.api_key = api_key
-                    print("Successfully loaded API key from", api_key_file)
-                except FileNotFoundError:
-                    raise LLMError(f"API key file not found: {api_key_file} or {api_key_file}.txt")
+                    print("Successfully loaded API key from", api_key_path)
+                else:
+                    # Try direct path
+                    api_key_path = Path(api_key_file)
+                    if api_key_path.exists():
+                        api_key = api_key_path.read_text().strip()
+                        if not api_key:
+                            raise ValueError("API key file is empty")
+                        openai.api_key = api_key
+                        print("Successfully loaded API key from", api_key_path)
+                    else:
+                        raise LLMError(f"API key file not found: {api_key_file}")
+            except Exception as e:
+                raise LLMError(f"Error reading API key file: {str(e)}")
         except Exception as e:
-            raise LLMError(f"Error reading API key file: {str(e)}")
+            raise LLMError(f"Error setting up API: {str(e)}")
     
     def query_model(
         self, 
@@ -825,7 +837,7 @@ class TaskManager:
  result logging.
     """
     
-    def __init__(self, base_path: str, gpt_version: str, api_key_file: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
+    def __init__(self, base_path: str, gpt_version: str, api_key_file: str, base_url: Optional[str] = None, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
         """Initialize the task manager.
         
         Args:
@@ -841,7 +853,7 @@ class TaskManager:
         self.prompt_allocation_set = prompt_allocation_set
         
         # Initialize components
-        self.llm = LLMHandler(api_key_file)
+        self.llm = LLMHandler(api_key_file, base_url=base_url)
         self.file_processor = FileProcessor(base_path)
         self.validator = PDDLValidator(self.llm, self.file_processor)
         self.planner = PDDLPlanner(base_path, self.file_processor)
@@ -1971,8 +1983,9 @@ def parse_arguments() -> argparse.Namespace:
         "--gpt-version",
         type=str,
         default="gpt-4o",
-        choices=['gpt-3.5-turbo', 'gpt-4o', 'gpt-3.5-turbo-16k']
+        help="LLM model version (e.g., gpt-4o, llama3)"
     )
+    parser.add_argument("--base-url", type=str, help="API base URL for OpenWebUI/local LLM")
     parser.add_argument(
         "--prompt-decompse-set",
         type=str,
@@ -2012,6 +2025,7 @@ def main():
             base_path=os.getcwd(),
             gpt_version=args.gpt_version,
             api_key_file=args.openai_api_key_file,
+            base_url=args.base_url,
             prompt_decompse_set=args.prompt_decompse_set,
             prompt_allocation_set=args.prompt_allocation_set
         )
